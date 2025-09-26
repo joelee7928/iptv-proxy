@@ -1,0 +1,65 @@
+# 工作流名称（自定义）
+name: 自动同步 IPTV 资源
+
+# 触发条件：1. 定时触发 2. 手动触发
+on:
+  schedule:
+    # Cron 表达式：定义同步频率（默认每6小时一次）
+    # 格式：分 时 日 月 周（使用 UTC 时间，比北京时间晚8小时）
+    - cron: '0 */12 * * *'  # 示例：每12小时同步一次（可按需修改）
+  workflow_dispatch:  # 允许手动触发（测试时用）
+
+# 执行的任务
+jobs:
+  sync-files:
+    runs-on: ubuntu-latest  # 运行环境（选 Ubuntu 最稳定）
+    steps:
+      # 步骤1：检出中转仓库的代码（让脚本能操作仓库文件）
+      - name: 检出仓库代码
+        uses: actions/checkout@v4  # 使用官方的检出动作
+
+      # 步骤2：拉取 GitHub 原始文件，覆盖本地旧文件
+      - name: 同步 result.m3u（基础版）
+        run: |
+          # 原始文件 URL（替换为你需要同步的地址）
+          RAW_URL="https://raw.githubusercontent.com/Guovin/iptv-api/gd/output/result.m3u"
+          # 目标路径（中转仓库的根目录，保持文件名一致）
+          TARGET_PATH="result.m3u"
+          # 用 curl 下载文件，-f 表示失败时退出，-L 处理重定向
+          curl -fL $RAW_URL -o $TARGET_PATH
+          echo "已同步 $TARGET_PATH"
+
+      - name: 同步 source.json
+        run: |
+          RAW_URL="https://raw.githubusercontent.com/Guovin/iptv-api/gd/source.json"
+          TARGET_PATH="source.json"
+          curl -fL $RAW_URL -o $TARGET_PATH
+          echo "已同步 $TARGET_PATH"
+
+      - name: 同步 IPv6 版 result.m3u（可选，根据需求保留）
+        run: |
+          RAW_URL="https://raw.githubusercontent.com/Guovin/iptv-api/gd/output/ipv6/result.m3u"
+          TARGET_PATH="ipv6_result.m3u"  # 可自定义文件名，避免冲突
+          # 若需要保持原路径（如 output/ipv6/result.m3u），需先创建目录
+          # mkdir -p output/ipv6  # 创建多级目录
+          # TARGET_PATH="output/ipv6/result.m3u"
+          curl -fL $RAW_URL -o $TARGET_PATH
+          echo "已同步 $TARGET_PATH"
+
+      # 步骤3：配置 Git 身份（用于提交代码）
+      - name: 配置 Git 用户名和邮箱
+        run: |
+          git config --global user.name "${{ github.actor }}"  # 自动获取你的 GitHub 用户名
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"  # 自动获取 GitHub 匿名邮箱
+
+      # 步骤4：提交更新到中转仓库
+      - name: 提交并推送更新
+        run: |
+          # 检查文件是否有变化
+          git add .
+          git diff --quiet --exit-code || (
+            # 有变化则提交，提交信息包含同步时间
+            git commit -m "自动同步 IPTV 资源 $(date +'%Y-%m-%d %H:%M:%S')"
+            # 推送更新（依赖 GitHub Actions 内置的 GITHUB_TOKEN 权限）
+            git push origin main
+          )
